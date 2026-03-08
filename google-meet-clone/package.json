@@ -1,0 +1,15 @@
+{
+    "name": "google-meet-clone",
+    "version": "1.0.0",
+    "description": "Root package for running both frontend and backend",
+    "scripts": {
+        "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+        "dev:backend": "cd backend && npm run dev",
+        "dev:frontend": "cd frontend && npm run dev",
+        "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+        "heroku-postbuild": "cd frontend && npm install && npm run build && cd ../backend && npm install"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.1"
+    }
+}

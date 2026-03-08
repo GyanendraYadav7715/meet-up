@@ -1,0 +1,215 @@
+.meeting-page {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: #202124;
+    color: white;
+    overflow: hidden;
+    position: relative;
+}
+
+.meeting-header {
+    padding: 16px 24px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none;
+}
+
+.meeting-info h2 {
+    font-size: 14px;
+    font-weight: 500;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 8px 12px;
+    border-radius: 6px;
+    backdrop-filter: blur(8px);
+}
+
+.meeting-main-area {
+    display: flex;
+    flex: 1;
+    height: calc(100vh - 80px);
+    /* Leave space for bottom bar */
+    overflow: hidden;
+    transition: width 0.3s ease;
+}
+
+.video-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-rows: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    padding: 16px;
+    padding-bottom: 32px;
+    overflow-y: auto;
+    align-items: center;
+    justify-items: center;
+    transition: all 0.3s ease;
+}
+
+.meeting-page.chat-open .video-grid {
+    padding-right: 380px;
+    /* Room for chat sidebar + gap */
+}
+
+.video-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    max-width: 1200px;
+    max-height: 800px;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #3c4043;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+}
+
+.video-wrapper.outline-active {
+    border: 2px solid #1a73e8;
+}
+
+.my-video,
+.peer-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* Changed from cover to contain to prevent cropping screen shares */
+    background-color: #000;
+}
+
+/* Mirror self video */
+.my-video {
+    transform: scaleX(-1);
+}
+
+.my-video.no-mirror {
+    transform: scaleX(1);
+}
+
+.video-label {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background-color: rgba(0, 0, 0, 0.6);
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    backdrop-filter: blur(4px);
+    z-index: 5;
+}
+
+/* Bottom Bar Controls */
+.bottom-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 80px;
+    background-color: #202124;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    box-shadow: 0 -1px 12px rgba(0, 0, 0, 0.2);
+    z-index: 200;
+    /* Ensure it's above Chat */
+}
+
+.controls-left,
+.controls-right {
+    flex: 1;
+}
+
+.controls-right {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.time {
+    font-size: 16px;
+    font-weight: 500;
+    color: #fff;
+}
+
+.controls-center {
+    display: flex;
+    gap: 16px;
+    flex: 2;
+    justify-content: center;
+    align-items: center;
+}
+
+.control-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 1px solid #5f6368;
+    background-color: #3c4043;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.control-btn:hover {
+    background-color: #434649;
+}
+
+.control-btn.danger {
+    background-color: #ea4335;
+    border-color: #ea4335;
+}
+
+.control-btn.active-feature {
+    background-color: #8ab4f8;
+    color: #202124;
+    border-color: #8ab4f8;
+}
+
+.control-btn.call-end {
+    background-color: #ea4335;
+    border-color: #ea4335;
+    width: 60px;
+    border-radius: 30px;
+}
+
+.control-btn.call-end:hover {
+    background-color: #d93025;
+}
+
+.control-btn.settings {
+    border: none;
+    background: transparent;
+}
+
+.control-btn.settings:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.control-btn.settings.active-feature-text {
+    color: #8ab4f8;
+}
+
+/* Responsive Grid Adjustments */
+@media (max-width: 900px) {
+    .video-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: repeat(auto-fit, minmax(200px, 1fr));
+    }
+
+    .meeting-page.chat-open .video-grid {
+        padding-right: 16px;
+        /* Chat likely overlays on mobile */
+    }
+}
