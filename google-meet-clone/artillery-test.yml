@@ -1,0 +1,22 @@
+config:
+  target: "http://localhost:5000"
+  engines:
+    socketio: {}
+  phases:
+    - duration: 60
+      arrivalRate: 2
+      maxVusers: 10
+      name: "Simulate 10 concurrent peers joining"
+
+scenarios:
+  - name: "Join Meeting Room"
+    engine: socketio
+    flow:
+      - emit:
+          channel: "join-room"
+          data:
+            - "test-room-optimizer"
+            - "user{{ $randomNumber(1000, 9999) }}"
+      - think: 30 # stay in the room for 30s
+      - emit:
+          channel: "leave-room"

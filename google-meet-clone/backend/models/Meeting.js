@@ -5,6 +5,7 @@ const meetingSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true,
+        index: true,
         trim: true
     },
     host: {
@@ -14,7 +15,7 @@ const meetingSchema = new mongoose.Schema({
     },
     title: {
         type: String,
-        default: 'Google Meet Clone Meeting'
+        default: 'New Meeting'
     },
     status: {
         type: String,

@@ -4,12 +4,15 @@ import io from 'socket.io-client';
 import Peer from 'simple-peer';
 import { Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, Settings, MonitorUp, MessageSquare, Disc, Download } from 'lucide-react';
 import Chat from './Chat';
+import { useWebRTCOptimized } from './hooks/useWebRTCOptimized';
+import { useMeeting } from './hooks/useMeeting';
+import TranscriptionComponent from './TranscriptionComponent';
 import './MeetingRoom.css';
 
 // Socket connection
 const socket = io('http://localhost:5000');
 
-const Video = ({ peer }) => {
+const Video = React.memo(({ peer }) => {
   const ref = useRef();
 
   useEffect(() => {
@@ -19,26 +22,35 @@ const Video = ({ peer }) => {
   }, [peer]);
 
   return <video playsInline autoPlay ref={ref} className="peer-video" />;
-};
+});
 
 export default function MeetingRoom() {
   const { id: roomId } = useParams();
   const navigate = useNavigate();
 
-  const [peers, setPeers] = useState([]);
   const [stream, setStream] = useState();
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const { peers, isSFUMode, setPeers, peersRef } = useWebRTCOptimized(socket, roomId, stream);
   
-  // Recording states
-  const [isRecording, setIsRecording] = useState(false);
+  // Custom Redux Hook Integration
+  const { 
+      isMuted, toggleMute,
+      isVideoOff, toggleVideo,
+      isScreenSharing, setScreenSharing,
+      isChatOpen, toggleChat,
+      isCaptionsEnabled, toggleCaptions,
+      isRecording, setRecordingStatus,
+      sfuParticipants, addSfuParticipant,
+      leaveMeeting
+  } = useMeeting();
+
+  const [captions, setCaptions] = useState([]); // High-frequency state stays local
+  const [meetingNotes, setMeetingNotes] = useState([]); // High-frequency state stays local
+  const captionTimeoutRef = useRef(null);
   const [recordedChunks, setRecordedChunks] = useState([]);
   const mediaRecorderRef = useRef(null);
   
   const userVideo = useRef();
-  const peersRef = useRef([]);
+  const mediaSources = useRef({}); // storing { mediaSource, sourceBuffer: SourceBuffer }
 
   useEffect(() => {
     let myStream = null;
@@ -49,47 +61,6 @@ export default function MeetingRoom() {
       if (userVideo.current) {
         userVideo.current.srcObject = currentStream;
       }
-
-      // 1. Join the room using socket ID
-      socket.emit('join-room', roomId, socket.id);
-
-      // 2. Someone connected, create a peer and call them
-      socket.on('user-connected', userId => {
-        const peer = createPeer(userId, socket.id, currentStream);
-        peersRef.current.push({
-          peerID: userId,
-          peer,
-        });
-        setPeers(users => [...users, { peerID: userId, peer }]);
-      });
-
-      // 3. User joined (we are receiving a call)
-      socket.on('user-joined', payload => {
-        const peer = addPeer(payload.signal, payload.callerID, currentStream);
-        peersRef.current.push({
-          peerID: payload.callerID,
-          peer,
-        });
-
-        setPeers(users => [...users, { peerID: payload.callerID, peer }]);
-      });
-
-      // 4. Call accepted, hook up the stream
-      socket.on('receiving-returned-signal', payload => {
-        const item = peersRef.current.find(p => p.peerID === payload.id);
-        item.peer.signal(payload.signal);
-      });
-
-      // 5. Handle Disconnects
-      socket.on('user-disconnected', userId => {
-        const peerObj = peersRef.current.find(p => p.peerID === userId);
-        if (peerObj) {
-          peerObj.peer.destroy();
-        }
-        const newPeers = peersRef.current.filter(p => p.peerID !== userId);
-        peersRef.current = newPeers;
-        setPeers(newPeers);
-      });
     }).catch(err => {
       console.error("Failed to get local stream", err);
     });
@@ -98,55 +69,57 @@ export default function MeetingRoom() {
       if (myStream) {
         myStream.getTracks().forEach(track => track.stop());
       }
-      socket.emit('leave-room', roomId, socket.id);
-      socket.off('user-connected');
-      socket.off('user-joined');
-      socket.off('receiving-returned-signal');
-      socket.off('user-disconnected');
     };
-  }, [roomId]);
+  }, []);
 
-  function createPeer(userToSignal, callerID, stream) {
-    const peer = new Peer({
-      initiator: true,
-      trickle: false,
-      stream,
-    });
+  // SFU Simulation logic for displaying relayed media chunks
+  useEffect(() => {
+    if (!isSFUMode) return;
 
-    peer.on('signal', signal => {
-      socket.emit('sending-signal', { userToSignal, callerID, signal });
-    });
+    const handleRelayedMedia = (payload) => {
+      addSfuParticipant(payload.senderId);
+    };
 
-    return peer;
-  }
+    socket.on('relayed-media', handleRelayedMedia);
 
-  function addPeer(incomingSignal, callerID, stream) {
-    const peer = new Peer({
-      initiator: false,
-      trickle: false,
-      stream,
-    });
+    return () => {
+      socket.off('relayed-media', handleRelayedMedia);
+    };
+  }, [isSFUMode, addSfuParticipant]);
 
-    peer.on('signal', signal => {
-      socket.emit('returning-signal', { signal, callerID });
-    });
+  // Handle Incoming Captions
+  useEffect(() => {
+    const handleCaption = (payload) => {
+        // payload: { text, senderName, language, isFinal, timestamp }
+        setCaptions([{ ...payload }]); // For MVP we replace the single active caption line for simplicity
+        
+        // Append to meeting notes
+        if (payload.isFinal) {
+             setMeetingNotes(prev => [...prev, payload]);
+        }
 
-    peer.signal(incomingSignal);
+        // Clear caption after 5s of silence
+        if (captionTimeoutRef.current) clearTimeout(captionTimeoutRef.current);
+        captionTimeoutRef.current = setTimeout(() => {
+             setCaptions([]);
+        }, 5000);
+    };
 
-    return peer;
-  }
+    socket.on('receive-caption', handleCaption);
+    return () => socket.off('receive-caption', handleCaption);
+  }, []);
 
-  const toggleAudio = () => {
+  const handleToggleAudio = () => {
     if (stream) {
       stream.getAudioTracks()[0].enabled = !stream.getAudioTracks()[0].enabled;
-      setIsMuted(!stream.getAudioTracks()[0].enabled);
+      toggleMute();
     }
   };
 
-  const toggleVideo = () => {
+  const handleToggleVideo = () => {
     if (stream) {
       stream.getVideoTracks()[0].enabled = !stream.getVideoTracks()[0].enabled;
-      setIsVideoOff(!stream.getVideoTracks()[0].enabled);
+      toggleVideo();
     }
   };
 
@@ -164,7 +137,7 @@ export default function MeetingRoom() {
         
         // Update local video
         userVideo.current.srcObject = screenStream;
-        setIsScreenSharing(true);
+        setScreenSharing(true);
 
         // Listen for user stopping screen share from browser built-in UI
         screenVideoTrack.onended = () => {
@@ -196,7 +169,7 @@ export default function MeetingRoom() {
 
     // Reattach local camera stream
     userVideo.current.srcObject = stream;
-    setIsScreenSharing(false);
+    setScreenSharing(false);
   };
 
   const handleStartCaptureClick = React.useCallback(() => {
@@ -217,25 +190,21 @@ export default function MeetingRoom() {
 
     mediaRecorderRef.current = mediaRecorder;
     mediaRecorder.start();
-    setIsRecording(true);
-  }, [stream, setIsRecording, setRecordedChunks]);
+    setRecordingStatus(true);
+  }, [stream, setRecordingStatus, setRecordedChunks]);
 
   const handleStopCaptureClick = React.useCallback(() => {
     if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
-        setIsRecording(false);
+        setRecordingStatus(false);
     }
-  }, [mediaRecorderRef, setIsRecording]);
+  }, [mediaRecorderRef, setRecordingStatus]);
 
   const handleDownload = React.useCallback(() => {
     if (recordedChunks.length) {
-      const blob = new Blob(recordedChunks, {
-        type: "video/webm"
-      });
+      const blob = new Blob(recordedChunks, { type: "video/webm" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      document.body.appendChild(a);
-      a.style = "display: none";
       a.href = url;
       a.download = `meeting-recording-${roomId}.webm`;
       a.click();
@@ -244,22 +213,46 @@ export default function MeetingRoom() {
     }
   }, [recordedChunks, roomId]);
 
+  const exportNotes = async () => {
+    if (meetingNotes.length === 0) {
+        alert("No transcript yet to save.");
+        return;
+    }
+    try {
+        const token = localStorage.getItem('token'); // Simplistic token grab for MVP
+        await fetch(`http://localhost:5000/api/meetings/${roomId}/notes`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ notes: meetingNotes })
+        });
+        alert('Meeting notes exported to MongoDB successfully!');
+    } catch(err) {
+        console.error('Failed to export notes', err);
+        alert('Failed to export notes.');
+    }
+  };
+
 
   const declineMeeting = () => {
     socket.emit('leave-room');
+    leaveMeeting(); 
     navigate('/');
   };
 
   return (
     <div className={`meeting-page ${isChatOpen ? 'chat-open' : ''}`}>
-      <div className="meeting-header">
+      <div className="meeting-header" role="banner">
         <div className="meeting-info">
-          <h2>Meeting ID: {roomId}</h2>
-          {isRecording && <div className="recording-indicator" style={{ marginLeft: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: '#ea4335', fontSize: '14px', background: 'rgba(0,0,0,0.4)', padding: '8px 12px', borderRadius: '6px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ea4335', animation: 'pulse 1.5s infinite' }}></div> Recording</div>}
+          <h2 aria-label={`Meeting ID: ${roomId}`}>Meeting ID: {roomId}</h2>
+          {isSFUMode && <span className="sfu-badge" role="status" aria-live="polite" style={{ marginLeft: '12px', padding: '4px 8px', background: '#e3f2fd', color: '#1565c0', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>SFU Mode Active</span>}
+          {isRecording && <div className="recording-indicator" role="status" aria-live="polite" style={{ marginLeft: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: '#ea4335', fontSize: '14px', background: 'rgba(0,0,0,0.4)', padding: '8px 12px', borderRadius: '6px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ea4335', animation: 'pulse 1.5s infinite' }}></div> Recording</div>}
         </div>
       </div>
       
-      <div className="meeting-main-area">
+      <div className="meeting-main-area" role="main" aria-label="Meeting Video Grid">
         <div className="video-grid">
           <div className="video-wrapper outline-active">
              {/* Do not mirror video if we are screen sharing! */}
@@ -267,78 +260,136 @@ export default function MeetingRoom() {
             <div className="video-label">{isScreenSharing ? 'Your Presentation' : 'You'}</div>
           </div>
           
-          {peers.map((peer) => {
-            return (
-              <div className="video-wrapper" key={peer.peerID}>
-                <Video peer={peer.peer} />
-                <div className="video-label">Participant</div>
+          {isSFUMode ? (
+            // Render SFU placeholders or relayed video tags
+            sfuParticipants.map((senderId) => (
+              <div className="video-wrapper" key={senderId}>
+                <div className="sfu-placeholder" style={{ background: '#333', height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                  Receiving SFU Feed...
+                </div>
+                <div className="video-label">Relayed Participant</div>
               </div>
-            );
-          })}
+            ))
+          ) : (
+            // Render P2P Mesh Video components
+            peers.map((peer) => {
+              return (
+                <div className="video-wrapper" key={peer.peerID}>
+                  <Video peer={peer.peer} />
+                  <div className="video-label">Participant</div>
+                </div>
+              );
+            })
+          )}
         </div>
+
+        {/* Captions Overlay */}
+        {isCaptionsEnabled && captions.length > 0 && (
+           <div className="captions-overlay" aria-live="polite" style={{ position: 'absolute', bottom: '120px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px 20px', borderRadius: '8px', zIndex: 10, fontSize: '18px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '300px', textAlign: 'center' }}>
+               {captions.map((cap, i) => (
+                  <div key={i}><strong>{cap.senderName}:</strong> {cap.text}</div>
+               ))}
+           </div>
+        )}
+
+        {isCaptionsEnabled && (
+           <TranscriptionComponent 
+               socket={socket} 
+               isMuted={isMuted} 
+               language="en-US" // Hardcoded to EN for MVP
+               userName={`User_${roomId.substring(0,4)}`} // Stubbed username
+           />
+        )}
         
         <Chat 
           socket={socket} 
           roomId={roomId} 
           isOpen={isChatOpen} 
-          onClose={() => setIsChatOpen(false)} 
+          onClose={toggleChat} 
         />
       </div>
 
-      <div className="bottom-bar">
+      <div className="bottom-bar" role="toolbar" aria-label="Meeting controls">
         <div className="controls-left">
-           <span className="time">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} | {roomId}</span>
+           <span className="time" aria-hidden="true">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} | {roomId}</span>
         </div>
         
         <div className="controls-center">
           <button 
             className={`control-btn ${isMuted ? 'danger' : ''}`}
-            onClick={toggleAudio}
+            onClick={handleToggleAudio}
             title={isMuted ? "Turn on microphone" : "Turn off microphone"}
+            aria-label={isMuted ? "Turn on microphone" : "Turn off microphone"}
+            aria-pressed={!isMuted}
           >
-            {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+            {isMuted ? <MicOff size={24} aria-hidden="true" /> : <Mic size={24} aria-hidden="true" />}
           </button>
           
           <button 
             className={`control-btn ${isVideoOff ? 'danger' : ''}`}
-            onClick={toggleVideo}
+            onClick={handleToggleVideo}
             title={isVideoOff ? "Turn on camera" : "Turn off camera"}
+            aria-label={isVideoOff ? "Turn on camera" : "Turn off camera"}
+            aria-pressed={!isVideoOff}
           >
-            {isVideoOff ? <VideoOff size={24} /> : <VideoIcon size={24} />}
+            {isVideoOff ? <VideoOff size={24} aria-hidden="true" /> : <VideoIcon size={24} aria-hidden="true" />}
           </button>
 
           <button 
             className={`control-btn ${isScreenSharing ? 'active-feature' : ''}`}
             onClick={shareScreen}
             title={isScreenSharing ? "Stop presenting" : "Present now"}
+            aria-label={isScreenSharing ? "Stop presenting" : "Present now"}
+            aria-pressed={isScreenSharing}
           >
-            <MonitorUp size={24} />
+            <MonitorUp size={24} aria-hidden="true" />
           </button>
           
-          <button className="control-btn call-end" onClick={declineMeeting} title="Leave call">
-            <PhoneOff size={24} />
+          <button className="control-btn call-end" onClick={declineMeeting} title="Leave call" aria-label="Leave call">
+            <PhoneOff size={24} aria-hidden="true" />
           </button>
         </div>
 
         <div className="controls-right" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {meetingNotes.length > 0 && (
+             <button className="control-btn settings" onClick={exportNotes} title="Export Captions to MongoDB" aria-label="Export Captions">
+                 <Download size={24} color="#fbbc04" aria-hidden="true" />
+             </button>
+          )}
+
+          <button 
+             className={`control-btn settings ${isCaptionsEnabled ? 'active-feature-text' : ''}`}
+             onClick={toggleCaptions}
+             title="Toggle CC"
+             aria-label="Toggle Live Captions"
+             aria-pressed={isCaptionsEnabled}
+          >
+             <div style={{ fontSize: '14px', fontWeight: 'bold'}}>CC</div>
+          </button>
+
           {recordedChunks.length > 0 && !isRecording && (
-            <button className="control-btn settings" onClick={handleDownload} title="Download Recording">
-              <Download size={24} color="#34a853" />
+            <button className="control-btn settings" onClick={handleDownload} title="Download Recording" aria-label="Download Recording">
+              <Download size={24} color="#34a853" aria-hidden="true" />
             </button>
           )}
+          {/* GDPR Context: Users must be informed if recorded. Local recording drops file entirely on client's machine, keeping data retention out of our servers. */}
           <button 
             className={`control-btn settings ${isRecording ? 'active-feature-text' : ''}`}
             onClick={isRecording ? handleStopCaptureClick : handleStartCaptureClick}
             title={isRecording ? "Stop Recording" : "Start Recording"}
+            aria-label={isRecording ? "Stop Recording" : "Start Recording"}
+            aria-pressed={isRecording}
           >
-           {isRecording ? <Disc size={24} color="#ea4335" /> : <Disc size={24} />}
+           {isRecording ? <Disc size={24} color="#ea4335" aria-hidden="true" /> : <Disc size={24} aria-hidden="true" />}
           </button>
           <button 
             className={`control-btn settings ${isChatOpen ? 'active-feature-text' : ''}`}
-            onClick={() => setIsChatOpen(!isChatOpen)}
+            onClick={toggleChat}
             title="Chat with everyone"
+            aria-label="Toggle Chat"
+            aria-expanded={isChatOpen}
           >
-            <MessageSquare size={24} />
+            <MessageSquare size={24} aria-hidden="true" />
           </button>
         </div>
       </div>
