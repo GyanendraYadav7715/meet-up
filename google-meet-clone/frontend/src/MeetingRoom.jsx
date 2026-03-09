@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import Peer from 'simple-peer';
-import { Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, Settings, MonitorUp, MessageSquare, Disc, Download } from 'lucide-react';
+import { Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, Settings, MonitorUp, MessageSquare, Disc, Download, Info, Users, Shapes, Copy, UserPlus, X, Smile, Hand, MoreVertical, Subtitles, Lock } from 'lucide-react';
 import Chat from './Chat';
 import { useWebRTCOptimized } from './hooks/useWebRTCOptimized';
 import { useMeeting } from './hooks/useMeeting';
@@ -47,6 +47,7 @@ export default function MeetingRoom() {
   const [meetingNotes, setMeetingNotes] = useState([]); // High-frequency state stays local
   const captionTimeoutRef = useRef(null);
   const [recordedChunks, setRecordedChunks] = useState([]);
+  const [showInviteModal, setShowInviteModal] = useState(true);
   const mediaRecorderRef = useRef(null);
   
   const userVideo = useRef();
@@ -244,19 +245,16 @@ export default function MeetingRoom() {
 
   return (
     <div className={`meeting-page ${isChatOpen ? 'chat-open' : ''}`}>
-      <div className="meeting-header" role="banner">
-        <div className="meeting-info">
-          <h2 aria-label={`Meeting ID: ${roomId}`}>Meeting ID: {roomId}</h2>
-          {isSFUMode && <span className="sfu-badge" role="status" aria-live="polite" style={{ marginLeft: '12px', padding: '4px 8px', background: '#e3f2fd', color: '#1565c0', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>SFU Mode Active</span>}
-          {isRecording && <div className="recording-indicator" role="status" aria-live="polite" style={{ marginLeft: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: '#ea4335', fontSize: '14px', background: 'rgba(0,0,0,0.4)', padding: '8px 12px', borderRadius: '6px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ea4335', animation: 'pulse 1.5s infinite' }}></div> Recording</div>}
-        </div>
-      </div>
+      {/* Hide original header to match exactly the screenshot which has no header bars inside the meeting room except the video grid */}
       
       <div className="meeting-main-area" role="main" aria-label="Meeting Video Grid">
         <div className="video-grid">
-          <div className="video-wrapper outline-active">
+          <div className="video-wrapper outline-active main-focus">
              {/* Do not mirror video if we are screen sharing! */}
             <video muted ref={userVideo} autoPlay playsInline className={`my-video ${isScreenSharing ? 'no-mirror' : ''}`} />
+            <div className="avatar-placeholder absolute-center">
+              <img src="https://ui-avatars.com/api/?name=You&background=random" alt="Avatar" style={{borderRadius: '50%', width: '100px', height: '100px', display: stream?.getVideoTracks()[0]?.enabled ? 'none' : 'block'}} />
+            </div>
             <div className="video-label">{isScreenSharing ? 'Your Presentation' : 'You'}</div>
           </div>
           
@@ -282,6 +280,32 @@ export default function MeetingRoom() {
             })
           )}
         </div>
+
+        {/* Invite Modal */}
+        {showInviteModal && (
+          <div className="invite-modal">
+            <div className="invite-modal-header">
+              <h3>Your meeting's ready</h3>
+              <button className="icon-btn-small" onClick={() => setShowInviteModal(false)}><X size={20} color="#5f6368" /></button>
+            </div>
+            <button className="btn-primary invite-btn">
+              <UserPlus size={18} />
+              Add others
+            </button>
+            <p className="invite-text">Or share this meeting link with others that you want in the meeting</p>
+            <div className="copy-link-box">
+               <span className="link-text">meet.google.com/{roomId}</span>
+               <button className="icon-btn-small" onClick={() => navigator.clipboard.writeText(`meet.google.com/${roomId}`)}>
+                 <Copy size={20} color="#5f6368" />
+               </button>
+            </div>
+            <div className="security-notice">
+               <Lock size={16} color="#1a73e8" />
+               <span>People who use this meeting link must get your permission before they join.</span>
+            </div>
+            <div className="joined-as">Joined as admin@example.com</div>
+          </div>
+        )}
 
         {/* Captions Overlay */}
         {isCaptionsEnabled && captions.length > 0 && (
@@ -319,30 +343,44 @@ export default function MeetingRoom() {
             className={`control-btn ${isMuted ? 'danger' : ''}`}
             onClick={handleToggleAudio}
             title={isMuted ? "Turn on microphone" : "Turn off microphone"}
-            aria-label={isMuted ? "Turn on microphone" : "Turn off microphone"}
-            aria-pressed={!isMuted}
           >
-            {isMuted ? <MicOff size={24} aria-hidden="true" /> : <Mic size={24} aria-hidden="true" />}
+            {isMuted ? <MicOff size={24} color={isMuted ? 'white' : 'currentColor'} aria-hidden="true" /> : <Mic size={24} aria-hidden="true" />}
           </button>
           
           <button 
             className={`control-btn ${isVideoOff ? 'danger' : ''}`}
             onClick={handleToggleVideo}
             title={isVideoOff ? "Turn on camera" : "Turn off camera"}
-            aria-label={isVideoOff ? "Turn on camera" : "Turn off camera"}
-            aria-pressed={!isVideoOff}
           >
-            {isVideoOff ? <VideoOff size={24} aria-hidden="true" /> : <VideoIcon size={24} aria-hidden="true" />}
+            {isVideoOff ? <VideoOff size={24} color={isVideoOff ? 'white' : 'currentColor'} aria-hidden="true" /> : <VideoIcon size={24} aria-hidden="true" />}
+          </button>
+
+          <button 
+             className={`control-btn ${isCaptionsEnabled ? 'active-feature' : ''}`}
+             onClick={toggleCaptions}
+             title="Turn on captions"
+          >
+             <Subtitles size={24} aria-hidden="true" />
+          </button>
+
+          <button className="control-btn" title="Send a reaction">
+             <Smile size={24} aria-hidden="true" />
+          </button>
+
+          <button className="control-btn" title="Raise hand">
+             <Hand size={24} aria-hidden="true" />
           </button>
 
           <button 
             className={`control-btn ${isScreenSharing ? 'active-feature' : ''}`}
             onClick={shareScreen}
             title={isScreenSharing ? "Stop presenting" : "Present now"}
-            aria-label={isScreenSharing ? "Stop presenting" : "Present now"}
-            aria-pressed={isScreenSharing}
           >
             <MonitorUp size={24} aria-hidden="true" />
+          </button>
+
+          <button className="control-btn" title="More options">
+             <MoreVertical size={24} aria-hidden="true" />
           </button>
           
           <button className="control-btn call-end" onClick={declineMeeting} title="Leave call" aria-label="Leave call">
@@ -350,46 +388,29 @@ export default function MeetingRoom() {
           </button>
         </div>
 
-        <div className="controls-right" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
-          {meetingNotes.length > 0 && (
-             <button className="control-btn settings" onClick={exportNotes} title="Export Captions to MongoDB" aria-label="Export Captions">
-                 <Download size={24} color="#fbbc04" aria-hidden="true" />
-             </button>
-          )}
-
-          <button 
-             className={`control-btn settings ${isCaptionsEnabled ? 'active-feature-text' : ''}`}
-             onClick={toggleCaptions}
-             title="Toggle CC"
-             aria-label="Toggle Live Captions"
-             aria-pressed={isCaptionsEnabled}
-          >
-             <div style={{ fontSize: '14px', fontWeight: 'bold'}}>CC</div>
+        <div className="controls-right">
+          <button className="control-btn settings" title="Meeting details" onClick={() => setShowInviteModal(!showInviteModal)}>
+             <Info size={24} color="white" aria-hidden="true" />
+          </button>
+          
+          <button className="control-btn settings" title="People">
+             <Users size={24} color="white" aria-hidden="true" />
           </button>
 
-          {recordedChunks.length > 0 && !isRecording && (
-            <button className="control-btn settings" onClick={handleDownload} title="Download Recording" aria-label="Download Recording">
-              <Download size={24} color="#34a853" aria-hidden="true" />
-            </button>
-          )}
-          {/* GDPR Context: Users must be informed if recorded. Local recording drops file entirely on client's machine, keeping data retention out of our servers. */}
-          <button 
-            className={`control-btn settings ${isRecording ? 'active-feature-text' : ''}`}
-            onClick={isRecording ? handleStopCaptureClick : handleStartCaptureClick}
-            title={isRecording ? "Stop Recording" : "Start Recording"}
-            aria-label={isRecording ? "Stop Recording" : "Start Recording"}
-            aria-pressed={isRecording}
-          >
-           {isRecording ? <Disc size={24} color="#ea4335" aria-hidden="true" /> : <Disc size={24} aria-hidden="true" />}
-          </button>
           <button 
             className={`control-btn settings ${isChatOpen ? 'active-feature-text' : ''}`}
             onClick={toggleChat}
             title="Chat with everyone"
-            aria-label="Toggle Chat"
-            aria-expanded={isChatOpen}
           >
-            <MessageSquare size={24} aria-hidden="true" />
+            <MessageSquare size={24} color={isChatOpen ? '#8ab4f8' : 'white'} aria-hidden="true" />
+          </button>
+
+          <button className="control-btn settings" title="Activities">
+             <Shapes size={24} color="white" aria-hidden="true" />
+          </button>
+
+          <button className="control-btn settings" title="Host controls">
+             <Lock size={24} color="white" aria-hidden="true" />
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
-import { Video, Keyboard, Plus } from 'lucide-react'; // Keep these as Home component still uses them
-import { useAuth } from './hooks/useAuth'; // Assuming this hook is still used for auth, despite Redux mention
+import { Video, Keyboard, Plus, Menu, HelpCircle, MessageSquare, Settings, Grid, CalendarDays, Link, Calendar, ChevronLeft, ChevronRight } from 'lucide-react'; 
+import { useAuth } from './hooks/useAuth';
 import ErrorBoundary from './components/ErrorBoundary';
 import './App.css';
 
@@ -38,6 +38,9 @@ function Home() {
     }
   };
 
+  // New Meeting Dropdown State
+  const [showNewMeetingMenu, setShowNewMeetingMenu] = useState(false);
+
   const handleJoin = () => {
     if (roomId.trim()) {
       navigate(`/room/${roomId}`);
@@ -49,68 +52,124 @@ function Home() {
     navigate(`/room/${newRoomId}`);
   };
 
+  const handleDocumentClick = (e) => {
+      // Close dropdown if clicked outside
+      if (!e.target.closest('.new-meeting-container')) {
+          setShowNewMeetingMenu(false);
+      }
+  };
+
+  React.useEffect(() => {
+      document.addEventListener('click', handleDocumentClick);
+      return () => document.removeEventListener('click', handleDocumentClick);
+  }, []);
+
   return (
     <div className="home-container">
       <header className="header">
-        <div className="logo">
-          <Video color="#1a73e8" size={32} />
-          <span>Google Meet Clone</span>
+        <div className="header-left">
+          <button className="icon-btn menu-btn"><Menu size={20} color="#5f6368" /></button>
+          <div className="logo">
+            <img src="https://www.gstatic.com/meet/google_meet_horizontal_wordmark_2020q4_1x_icon_124_40_2373e79660dabbf194273d27aa7ee1f5.png" alt="Google Meet Logo" style={{ height: '30px' }} />
+          </div>
         </div>
         <div className="header-right">
-          <span className="time">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <span className="time">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+          <div className="header-icons">
+             <button className="icon-btn"><HelpCircle size={20} color="#5f6368" /></button>
+             <button className="icon-btn"><MessageSquare size={20} color="#5f6368" /></button>
+             <button className="icon-btn"><Settings size={20} color="#5f6368" /></button>
+          </div>
+          <div className="header-icons" style={{ marginLeft: '10px' }}>
+             <button className="icon-btn"><Grid size={20} color="#5f6368" /></button>
+          </div>
+          
           {isAuthenticated ? (
-             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <div className="user-avatar">{user?.name ? user.name.charAt(0).toUpperCase() : 'U'}</div>
-                <button className="btn-text" style={{ cursor: 'pointer' }} onClick={logout}>Logout</button>
+             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginLeft: '10px' }}>
+                <div className="user-avatar" title={user?.email}>{user?.name ? user.name.charAt(0).toUpperCase() : 'U'}</div>
+                <button className="btn-text" style={{ cursor: 'pointer', padding: '0 8px' }} onClick={logout}>Logout</button>
              </div>
           ) : (
-             <button className="btn-primary" onClick={() => setShowAuthModal(true)}>Sign In</button>
+             <button className="btn-primary" style={{ marginLeft: '10px' }} onClick={() => setShowAuthModal(true)}>Sign In</button>
           )}
         </div>
       </header>
 
-      <main className="main-content">
-        <div className="left-panel">
-          <h1>Premium video meetings.<br/>Now free for everyone.</h1>
-          <p>We re-engineered the service we built for secure business meetings, Google Meet, to make it free and available for all.</p>
-          
-          <div className="action-buttons">
-            <button className="btn-primary" onClick={createMeeting}>
-              <Video size={20} />
-              New meeting
-            </button>
-            <div className="join-form">
-              <div className="input-with-icon">
-                <Keyboard size={20} color="#5f6368" />
-                <input 
-                  type="text" 
-                  placeholder="Enter a code or link"
-                  value={roomId}
-                  onChange={(e) => setRoomId(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
-                />
-              </div>
-              <button 
-                className={`btn-text ${roomId ? 'active' : ''}`}
-                onClick={handleJoin}
-                disabled={!roomId}
-              >
-                Join
-              </button>
+      <div className="main-layout">
+         <aside className="sidebar">
+            <div className="sidebar-item active">
+               <CalendarDays size={20} />
+               <span>Meetings</span>
             </div>
-          </div>
-          <div className="divider"></div>
-          <p className="learn-more"><a href="#">Learn more</a> about Google Meet</p>
-        </div>
-        
-        <div className="right-panel">
-          <div className="hero-images">
-            <img src="https://www.gstatic.com/meet/user_edu_get_a_link_light_90698cd7b4ca04d3005c962a3756c42d.svg" alt="Get a link you can share" />
-            <h2>Get a link you can share</h2>
-            <p>Click <strong>New meeting</strong> to get a link you can send to people you want to meet with</p>
-          </div>
-        </div>
-      </main>
+            <div className="sidebar-item">
+               <Video size={20} />
+               <span>Calls</span>
+            </div>
+         </aside>
+
+         <main className="main-content">
+            <div className="hero-section">
+               <h1>Video calls and meetings for<br/>everyone</h1>
+               <p>Connect, collaborate and celebrate from anywhere with<br/>Google Meet</p>
+               
+               <div className="action-buttons">
+                  <div className="new-meeting-container" style={{ position: 'relative' }}>
+                     <button className="btn-primary" onClick={() => setShowNewMeetingMenu(!showNewMeetingMenu)}>
+                        <Video size={18} />
+                        New meeting
+                     </button>
+                     
+                     {showNewMeetingMenu && (
+                        <div className="dropdown-menu">
+                           <div className="dropdown-item" onClick={createMeeting}>
+                              <Link size={18} color="#5f6368" />
+                              <span>Create a meeting for later</span>
+                           </div>
+                           <div className="dropdown-item" onClick={createMeeting}>
+                              <Plus size={18} color="#5f6368" />
+                              <span>Start an instant meeting</span>
+                           </div>
+                           <div className="dropdown-item">
+                              <Calendar size={18} color="#5f6368" />
+                              <span>Schedule in Google Calendar</span>
+                           </div>
+                        </div>
+                     )}
+                  </div>
+                  
+                  <div className="join-form">
+                     <div className="input-with-icon">
+                        <Keyboard size={20} color="#5f6368" />
+                        <input 
+                           type="text" 
+                           placeholder="Enter a code or link"
+                           value={roomId}
+                           onChange={(e) => setRoomId(e.target.value)}
+                           onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
+                        />
+                     </div>
+                     <button 
+                        className={`btn-text ${roomId ? 'active' : ''}`}
+                        onClick={handleJoin}
+                        disabled={!roomId}
+                     >
+                        Join
+                     </button>
+                  </div>
+               </div>
+               
+               <div className="divider"></div>
+
+               <div className="carousel-section">
+                  <button className="carousel-nav"><ChevronLeft size={20} color="#5f6368" /></button>
+                  <div className="carousel-image">
+                     <img src="https://www.gstatic.com/meet/user_edu_get_a_link_light_90698cd7b4ca04d3005c962a3756c42d.svg" alt="Meet Illustration" />
+                   </div>
+                  <button className="carousel-nav"><ChevronRight size={20} color="#5f6368" /></button>
+               </div>
+            </div>
+         </main>
+      </div>
 
       {/* Auth Modal Overlay */}
       {showAuthModal && (
