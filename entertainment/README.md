@@ -79,6 +79,18 @@ Open your terminal in the project root directory and use the Gradle wrapper:
 ```
 *The server will start on `http://localhost:8080`.*
 
+### 🐳 Run with Docker (Recommended)
+You can easily spin up the entire application along with the MySQL database using Docker Compose without needing to install MySQL or Java locally:
+
+```bash
+# Build the image and start the containers in the background
+docker-compose up --build -d
+
+# View application logs
+docker-compose logs -f entertainment-app
+```
+*The API is now accessible on `http://localhost:8080`.*
+
 ---
 
 ## 📖 API Documentation
